@@ -25,8 +25,8 @@ def strextract(dir: str, suffix: str, path: bool, all: bool) -> None:
                 continue
             with open(dir + "/" + filename,'r', encoding="UTF-8") as lines:
                 for line in lines:
-                    for item in pattern.findall(line):
-                        print(path_prefix + item)
+                    for found_string in pattern.findall(line):
+                        print(path_prefix + found_string)
 
 def main():
     # build an empty parser
