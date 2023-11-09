@@ -3,32 +3,29 @@
 
 import os, argparse, re
 
-def strextract(dir:str, suffix:str, path:bool, all:bool) -> str:
-
-    #Create an object that contain the structute of the dir
-    l = os.walk(dir)
-    
+def strextract(dir: str, suffix: str, path: bool, all: bool) -> None:    
     #Handle the path
     if path:
-        path = os.path.abspath(dir) + "\t"
+        path_prefix = os.path.abspath(dir) + "\t"
     else:
-        path=""
+        path_prefix=""
 
+    pattern = re.compile(r"([\"\'])(.*?)(\1)")
     #Go through all the folder
-    for folder in l:
+    for root, _, filenames in os.walk(dir):
         #   Go through all the file in the folder
-        for fichier in folder[2]:
+        for filename in filenames:
             # Handle --suffix option
-            if suffix and not(fichier.endswith(suffix)):
+            if suffix and not(filename.endswith(suffix)):
                 continue
             # Handle --all option
-            if not(all) and fichier.startswith("."):
+            if not(all) and filename.startswith("."):
                 continue
-            with open(dir + "/" + fichier,'r', encoding="UTF-8") as f:
+            with open(dir + "/" + filename,'r', encoding="UTF-8") as f:
                 content = f.read()
-                match = re.findall(r"([\"\'])(.*?)(\1)", content)
+                match = pattern.findall(content)
                 for line in match:
-                    print(path + line[0] + line[1] + line[2])
+                    print(path_prefix + line[0] + line[1] + line[2])
 
 def main():
     # build an empty parser
