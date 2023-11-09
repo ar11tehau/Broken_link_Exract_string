@@ -9,8 +9,10 @@ def strextract(dir: str, suffix: str, path: bool, all: bool) -> None:
         path_prefix = os.path.abspath(dir) + "\t"
     else:
         path_prefix=""
+    
 
-    pattern = re.compile(r"([\"\'])(.*?)(\1)")
+    #pattern = re.compile(r"([\"\'])(.*?)(\1)")
+    pattern = re.compile(r"\".*?\"|\'.*?\'")
     #Go through all the folder
     for root, _, filenames in os.walk(dir):
         #   Go through all the file in the folder
@@ -21,11 +23,10 @@ def strextract(dir: str, suffix: str, path: bool, all: bool) -> None:
             # Handle --all option
             if not(all) and filename.startswith("."):
                 continue
-            with open(dir + "/" + filename,'r', encoding="UTF-8") as f:
-                content = f.read()
-                match = pattern.findall(content)
-                for line in match:
-                    print(path_prefix + line[0] + line[1] + line[2])
+            with open(dir + "/" + filename,'r', encoding="UTF-8") as lines:
+                for line in lines:
+                    for item in pattern.findall(line):
+                        print(item)
 
 def main():
     # build an empty parser
