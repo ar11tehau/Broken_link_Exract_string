@@ -1,252 +1,142 @@
-#!/home/arii/workspaces/unix/nosave/ux/bin/python
-import pandas as pd
-import csv
-import psycopg
+#!/usr/bin/env python 
+import pandas as pd, psycopg
 
 #Convert the xls to csv
-def convert(xls_file: str, csv_file: str) -> list:
-    # Create the 
+def convert(xls_file: str, csv_file: str) -> None:
     input = pd.read_excel(xls_file, decimal=",").fillna(value="-")
     input.to_csv(csv_file, sep=";", index=False)
-
-    # Print when it's done
     print(f'{xls_file} has been converted to {csv_file}')
 
-# Call convert
-#convert('in.xls', 'out.csv')
+# Get the data needed from the csv file and return a pandas datafram
+def get_data(file: str) -> pd:
+    if file.endswith("csv"):
+        pd_data = pd.read_csv(file, decimal=",", delimiter=";").fillna(value="-")
+    elif file.endswith("xls"):
+        pd_data = pd.read_excel(file, decimal=",").fillna(value="-")
+    return pd_data
 
-#import database into a list:
-def import_csv(csv_file:str):
-    # Initialize an empty list to store the data
-    data_list = []
-
-    # Open and read the CSV file
-    with open(csv_file, mode='r') as lines:
-        # Create a CSV reader object
-        list_lines = csv.reader(lines, delimiter=';')
-        data_pd = pd.read_csv(lines, delimiter=';') 
-
-        # Iterate over each row in the CSV file
-        for line in list_lines:
-            data_list.append(line)
-    print(data_pd)
-    return data_list
-
-# Get the data needed from the csv file and return list and dict
-def get_data(csv_file: str) -> (list, dict, dict, list):
-    all = import_csv(csv_file)
-    header = all[0]
-
-    # Get Nutrient names
-    start = header.index("Eau (g/100 g)")
-    nut_name = all[0][start:]
-    
-    # Prepare grp data
-    grp_id_index = header.index("alim_grp_code")
-    grp_nom_index = header.index("alim_grp_nom_fr")
-    grp_id_name = dict()
-
-    # Prepare Food data
-    food_id_index = header.index("alim_code")
-    food_name_index = header.index("alim_nom_fr")
-    food_id_name_grpid = dict()
-
-    # Prepare nutrient data
-    nut_data = dict()
-
-    for data in all[1:]:
-        if data[grp_id_index] not in grp_id_name:
-            grp_id_name[data[grp_id_index]] = data[grp_nom_index]
-        if data[food_id_index] not in food_id_name_grpid:
-            food_id_name_grpid[data[food_id_index]] = (data[food_name_index], data[grp_id_index])
-        
-#########   Use the panda ??? ###################
-######### Create a dict with a list of "3 tupples" ?? #############
-        nut_data.append(data[start:])
-    return nut_name, grp_id_name, food_id_name_grpid, nut_data
-
-
-def nutrient(cur, nut_name):
+# Create nutrient table and insert data
+def nutrient(cur: psycopg, pd_data: pd) -> None:
     table = "nutrient"
+    start = list(pd_data.keys()).index("Eau (g/100 g)")
+    nut_names = pd_data.keys()[start:]
 
     # Drop Table if exists
     cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+    print(f'{table} table dropped')
     
-    # Execute a command: this creates a new table
-    cur.execute(f"""
-        CREATE TABLE {table} (
-            id serial PRIMARY KEY,
-            name text)
-        """)
-    
-    # Pass data to fill a query placeholders and let Psycopg perform
-    # the correct conversion (no SQL injections!)
+    # Create the table
+    cur.execute(f"""CREATE TABLE {table} (
+                    id serial PRIMARY KEY,
+                    name text)""")
+    print(f'{table} table ---------> created')
+
+    # Query to insert
     query = f"INSERT INTO {table} (name) VALUES (%s)"
-    for values in nut_name:
-        cur.execute(query, [values])
+    for nut_name in nut_names:
+        cur.execute(query, [nut_name])
+    print(f'{table} ------------------------> id and name inserted')
 
-    # Query the database and obtain data as Python objects.
-    # cur.execute(f"SELECT * FROM {table} WHERE name = %s", ['Potassium (mg/100 g)',])
-    cur.execute(f"SELECT * FROM {table}")
-    names = cur.fetchall()
-    # will return (1, 100, "abc'def")
-
-    # You can use `cur.fetchmany()`, `cur.fetchall()` to return a list
-    # of several records, or even iterate on the cursor
-    for name in names:
-        print(name)
-
-    # Make the changes to the database persistent
-    # conn.commit()
-
-def grp(cur, grp_id_name):
+# Create grp table and insert data
+def grp(cur: psycopg, pd_data: pd) -> None:
     table = "grp"
-
     # Drop Table if exists
     cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+    print(f'{table} table dropped')
     
-    # Execute a command: this creates a new table
-    cur.execute(f"""
-        CREATE TABLE {table} (
-            id integer unique,
-            name text)
-        """)
+    # Create the table
+    cur.execute(f"""CREATE TABLE {table} (
+                    id integer primary key, 
+                    name text)""")
+    print(f'{table} table ---------> created')
     
-    # Pass data to fill a query placeholders and let Psycopg perform
-    # the correct conversion (no SQL injections!)
-    query = f"INSERT INTO {table} (id, name) VALUES (%s, %s)"
+    # Insert data
+    query = f"INSERT INTO {table} (id, name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING"
+    for id, name in zip(pd_data["alim_grp_code"], pd_data["alim_grp_nom_fr"]):
+        cur.execute(query, (id, [name]))
+    print(f"{table} ------------------------> id and name inserted")
 
-    for id, name in grp_id_name.items():
-        cur.execute(query, (id, name))
-
-    # Query the database and obtain data as Python objects.
-    # cur.execute(f"SELECT * FROM {table} WHERE name = %s", ['Potassium (mg/100 g)',])
-    cur.execute(f"SELECT * FROM {table}")
-    id_names = cur.fetchall()
-    # will return (1, 100, "abc'def")
-
-    # You can use `cur.fetchmany()`, `cur.fetchall()` to return a list
-    # of several records, or even iterate on the cursor
-    for id, names in id_names:
-        print(id, name)
-
-    # Make the changes to the database persistent
-    # conn.commit()
-
-
-def food(cur, food_id_name_grpid):
+# Create food table and insert data
+def food(cur: psycopg, pd_data: pd) -> None:
     table = "food"
 
     # Drop Table if exists
     cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+    print(f'{table} table dropped')
     
-    # Execute a command: this creates a new table
-    cur.execute(f"""
-        CREATE TABLE {table} (
-            id text unique,
-            name text,
-            grp_id integer references grp(id) on delete cascade)
-        """)
+    # Create the table
+    cur.execute(f"""CREATE TABLE {table} (
+                    id integer primary key,
+                    name text,
+                    grp_id integer references grp(id) on delete cascade)""")
+    print(f"{table} table ---------> created")
     
-    # Pass data to fill a query placeholders and let Psycopg perform
-    # the correct conversion (no SQL injections!)
-    query = f"INSERT INTO {table} (id, name, grp_id) VALUES (%s, %s, %s)"
+    # Insert data
+    query = f"INSERT INTO {table} (id, name, grp_id) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING"
+    for id, name, grp_id in zip(pd_data["alim_code"], pd_data["alim_nom_fr"], pd_data["alim_grp_code"]):
+        cur.execute(query, (id, name, grp_id))
+    print(f"{table} ------------------------> id, name and grp_id inserted")
 
-    for id, (name, grp_id) in food_id_name_grpid.items():
-        cur.execute(query, (id, [name], grp_id))
-
-    # Query the database and obtain data as Python objects.
-    # cur.execute(f"SELECT * FROM {table} WHERE name = %s", ['Potassium (mg/100 g)',])
-    cur.execute(f"SELECT * FROM {table}")
-    names = cur.fetchall()
-    # will return (1, 100, "abc'def")
-
-    # You can use `cur.fetchmany()`, `cur.fetchall()` to return a list
-    # of several records, or even iterate on the cursor
-    for name in names:
-        print(name)
-
-    # Make the changes to the database persistent
-    # conn.commit()
-
-def nutdata(cur, nut_data):
+# Create nutdata table and insert data
+def nutdata(cur: psycopg, pd_data: pd) -> None:
     table = "nutdata"
+
+    start = list(pd_data.keys()).index("Eau (g/100 g)")
+    nut_names = pd_data.keys()[start:]
+    
+    # Check the needed tables
+    cur.execute("""SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'""")
+    tables = set([table[0] for table in cur.fetchall()])
+    needed_tables = set(["nutrient", "grp","food"])    
+    if needed_tables & tables != needed_tables:
+        raise ValueError
 
     # Drop Table if exists
     cur.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+    print(f"{table} table dropped")
     
-    # Execute a command: this creates a new table
-    cur.execute(f"""
-        CREATE TABLE {table} (
-            id serial primary key,
-            food_id integer references food(id) on delete cascade,
-            grp_id integer references grp(id) on delete cascade,
-            value text)
-        """)
+    # Create the table
+    cur.execute(f"""CREATE TABLE {table} (
+                    id serial primary key,
+                    food_id integer references food(id) on delete cascade,
+                    nutrient_id integer references nutrient(id) on delete cascade,
+                    value text )""")
+    print(f"{table} table ---------> created")
     
-    # Pass data to fill a query placeholders and let Psycopg perform
-    # the correct conversion (no SQL injections!)
-    query = f"INSERT INTO {table} (id, name, grp_id) VALUES (%s, %s, %s)"
-
-    for id, (name, grp_id) in nut_data:
-        cur.execute(query, (id, [name], grp_id))
-
-    # Query the database and obtain data as Python objects.
-    # cur.execute(f"SELECT * FROM {table} WHERE name = %s", ['Potassium (mg/100 g)',])
-    cur.execute(f"SELECT * FROM {table}")
-    names = cur.fetchall()
-    # will return (1, 100, "abc'def")
-
-    # You can use `cur.fetchmany()`, `cur.fetchall()` to return a list
-    # of several records, or even iterate on the cursor
-    for name in names:
-        print(name)
-
-    # Make the changes to the database persistent
-    # conn.commit()
+    # Insert data
+    query = f"INSERT INTO {table} (food_id, nutrient_id, value) VALUES (%s, %s, %s)"
+    for nutrient_id, nut_name in enumerate(nut_names, 1):
+        for food_id, nut_data in zip(pd_data["alim_code"], pd_data[nut_name]):
+            cur.execute(query, (food_id, nutrient_id, nut_data))        
+    print(f"{table} ------------------------> data inserted")
 
 def main():
-    import_csv("./src/ciqual_data/sample.csv")
-    # Treat csv
-    # nut_name, grp_id_name, food_id_name_grpid, nut_data = get_data("./src/ciqual_data/sample.csv")
-    # # A personaliser plus tard
-    # db_name = 'ciqual'
-    # db_user = 'arii'
+    try:
+        # Convert xls to csv
+        # convert("./src/ciqual_data/in.xls", "./src/ciqual_data/out.csv")
 
+        # Retrieve data anoter possibilty --> pd_data = get_data("./src/ciqual_data/sample.csv")
+        pd_data = get_data("./src/ciqual_data/sample.csv")
+        
+        # Database info connection
+        db_name = 'ciqual'
+        db_user = ''
 
-    # # Connect to an existing database
-    # with psycopg.connect(dbname=db_name, user=db_user) as conn:
+        # Connect to the database
+        with psycopg.connect(dbname=db_name, user=db_user) as conn:
 
-    #     # Open a cursor to perform database operations
-    #     with conn.cursor() as cur:
-    #         nutrient(cur, nut_name)
-    #         grp(cur, grp_id_name)
-    #         food(cur, food_id_name_grpid)
-            
+            # Open a cursor to make some operations
+            with conn.cursor() as cur:
+                nutrient(cur, pd_data)
+                grp(cur, pd_data)
+                food(cur, pd_data)
+                nutdata(cur, pd_data)
 
-            # Make the changes to the database persistent
-            # conn.commit()
+                # Commit the changes to the database
+                conn.commit()
+    except ValueError:
+        print("Something went wrong, tell the student, he'll try his best to resolve the issue")
 
 if __name__ == "__main__":
     main()
-
-
-
-# Nutrient
-#    id: int (autoincrement)
-#    name string
-
-# Food
-#    id: string
-#    name: string
-#    grp_id: string (clé étrangère vers Grp(id))
-
-# Grp
-#    id: string
-#    name: string
-
-# NutData
-#    id: int (autoincrement)
-#    food_id: string (clé étrangère vers Food(id))
-#    nutrient_id: int (clé étrangère vers Nutrient(id))
-#    value: string
