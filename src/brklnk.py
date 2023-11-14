@@ -3,35 +3,33 @@
 from bs4 import BeautifulSoup
 import requests, argparse, re
 
-def brklnk(url:str, depth:int, visited:int = 0) -> int:
+def brklnk(url:str, depth:int) -> int:
     try:
-        visited = 1
-        site_pattern = re.compile(r"https?://.*?\..*?\.\w+|https?://.*?\.\w")
-
         #Check the website status
         status = requests.head(url)
-        
+        visited_link = list()
         if 200 <= status.status_code < 400 and depth > 0 :
             response = requests.get(url)
             content = BeautifulSoup(response.content, 'html.parser')
             for a in content.find_all('a'):
-                link = a.get("href")
-                if link == None:
-                    continue
-                else:
-                    if re.match("http", link) != None:
-                        visited += brklnk(link, 0)
-                    elif re.search(r"\@", link) == None:
-                        if re.match("/", link) == None:
-                            link = "/" + link
-                        new_link = url + link
-                        visited += brklnk(new_link, depth - 1)
+                a_get = a.get("href")
+                # Don't treat mails
+                if re.search(r"\@", a_get) == None and a_get != None:
+                    #Create the link to check
+                    if re.match("http", a_get) != None:
+                        link = a_get
+                    elif re.match("/", a_get) == None:
+                        link = url + "/" + a_get
+                    else:
+                         link = url + a_get
+                    if link not in visited_link:
+                        brklnk(link, depth - 1)
+                        visited_link.append(link)
         elif 400 <= status.status_code < 600:
             print("-------BROKEN LINK ------->", url)
-        return visited
+        return len(visited_link)
     except requests.exceptions.MissingSchema as error:
         print(error)
-        return visited
 
 def main():
     # build an empty parser
