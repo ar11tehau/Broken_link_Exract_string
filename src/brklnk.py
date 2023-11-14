@@ -3,36 +3,35 @@
 from bs4 import BeautifulSoup
 import requests, argparse, re
 
-times = 0
+def brklnk(url:str, depth:int, visited:int = 0) -> int:
+    try:
+        visited = 1
+        site_pattern = re.compile(r"https?://.*?\..*?\.\w+|https?://.*?\.\w")
 
-def brklnk(url:str, depth:int):
-    global times
-    times += 1
-    #Check the website status
-    site_pattern = re.compile(r"https?://.*?\..*?\.\w+|https?://.*?\.\w")
-    site = site_pattern.findall(url)
-    #print(site)
-    
-    status = requests.head(url)
-    if 200 <= status.status_code < 400 and depth > 0 :
-        response = requests.get(url)
-        content = BeautifulSoup(response.content, 'html.parser')
-        all_a = list()
-        for a in content.find_all('a'):
-            link = a.get("href")
-            if link != None:
-                all_a.append(link)
-        all_a = set(all_a)
-        for link in all_a:
-            if site_pattern.match(link) == None and re.search(r"\@", link) == None:
-                if re.match("/", link) == None:
-                    link = "/" + link
-                new_link = site[0] + link
-                brklnk(new_link, depth - 1)
-            elif site_pattern.match(link) != None:
-                brklnk(link, 0)
-    elif 400 <= status.status_code < 600:
-        print("-------BROKEN LINK ------->", url)
+        #Check the website status
+        status = requests.head(url)
+        
+        if 200 <= status.status_code < 400 and depth > 0 :
+            response = requests.get(url)
+            content = BeautifulSoup(response.content, 'html.parser')
+            for a in content.find_all('a'):
+                link = a.get("href")
+                if link == None:
+                    continue
+                else:
+                    if re.match("http", link) != None:
+                        visited += brklnk(link, 0)
+                    elif re.search(r"\@", link) == None:
+                        if re.match("/", link) == None:
+                            link = "/" + link
+                        new_link = url + link
+                        visited += brklnk(new_link, depth - 1)
+        elif 400 <= status.status_code < 600:
+            print("-------BROKEN LINK ------->", url)
+        return visited
+    except requests.exceptions.MissingSchema as error:
+        print(error)
+        return visited
 
 def main():
     # build an empty parser
@@ -46,9 +45,9 @@ def main():
     # instruct parser to parse command line arguments
     args = parser.parse_args()
 
-    brklnk(args.url, int(args.depth))
+    visited = brklnk(args.url, int(args.depth))
 
-    print(f"{times} site(s) analyzed")
+    print(f"{visited} site(s) analyzed")
 
 if __name__ == '__main__':
     main()
