@@ -3,16 +3,16 @@ import pandas as pd, psycopg
 
 #Convert the xls to csv
 def convert(xls_file: str, csv_file: str) -> None:
-    input = pd.read_excel(xls_file, decimal=",").fillna(value="-")
+    input = pd.read_excel(xls_file, decimal=",")
     input.to_csv(csv_file, sep=";", index=False)
     print(f'{xls_file} has been converted to {csv_file}')
 
 # Get the data needed from the csv file and return a pandas datafram
 def get_data(file: str) -> pd:
     if file.endswith("csv"):
-        pd_data = pd.read_csv(file, decimal=",", delimiter=";").fillna(value="-")
+        pd_data = pd.read_csv(file, decimal=",", delimiter=";") #.replace(regex="[-<>]", value=None)
     elif file.endswith("xls"):
-        pd_data = pd.read_excel(file, decimal=",").fillna(value="-")
+        pd_data = pd.read_excel(file, decimal=",") #.replace(regex="[-<>]", value=None)
     return pd_data
 
 # Create nutrient table and insert data
@@ -81,9 +81,6 @@ def food(cur: psycopg, pd_data: pd) -> None:
 def nutdata(cur: psycopg, pd_data: pd) -> None:
     table = "nutdata"
 
-    start = list(pd_data.keys()).index("Eau (g/100 g)")
-    nut_names = pd_data.keys()[start:]
-    
     # Check the needed tables
     cur.execute("""SELECT table_name FROM information_schema.tables
        WHERE table_schema = 'public'""")
@@ -101,45 +98,80 @@ def nutdata(cur: psycopg, pd_data: pd) -> None:
                     id serial primary key,
                     food_id integer references food(id) on delete cascade,
                     nutrient_id integer references nutrient(id) on delete cascade,
-                    value text )""")
+                    value text)""")
     print(f"{table} table ---------> created")
     
-    # Get nutrien_id
-    query = f"SELECT id FROM nutrient;"
+    # Get nutrient_id
+    query = f"SELECT id, name FROM nutrient;"
     cur.execute(query)
-    nutrient_ids = [id[0] for id in cur.fetchall()]
+    response = cur.fetchall()
+    nutrient_ids = [id[0] for id in response]
+    nut_names = [id[1] for id in response]
+
+    query = f"SELECT id FROM food;"
+    cur.execute(query)
+    food_ids = [id[0] for id in cur.fetchall()]
+
+    start = list(pd_data.keys()).index("Eau (g/100 g)")
+    # nut_names = pd_data.keys()[start:]
 
     # Insert data
     query = f"INSERT INTO {table} (food_id, nutrient_id, value) VALUES (%s, %s, %s)"
-    for nutrient_id, nut_name in zip(nutrient_ids, nut_names):
-        for food_id, nut_data in zip(pd_data["alim_code"], pd_data[nut_name]):
-            cur.execute(query, (food_id, nutrient_id, nut_data))        
+
+    for row, food_id in enumerate(food_ids):
+        for nutrient_id, nut_name in zip(nutrient_ids, nut_names):
+            cur.execute(query, (food_id, nutrient_id, str(pd_data[nut_name][row])))         
     print(f"{table} ------------------------> data inserted")
 
 def main():
     try:
         # Convert xls to csv
-        # convert("./src/ciqual_data/in.xls", "./src/ciqual_data/out.csv")
+        # convert("./src/ciqual_data/in.xls", "./src/ciqual_data/out.csv")
 
         # Retrieve data anoter possibilty --> pd_data = get_data("./src/ciqual_data/sample.csv")
-        pd_data = get_data("./src/ciqual_data/out.csv")
+        pd_data = get_data("./src/ciqual_data/in.xls")
         
         # Database info connection
         db_name = 'ciqual'
         db_user = ''
 
+        create = False # True
+        if create:
+            # Connect to the database
+            with psycopg.connect(dbname=db_name, user=db_user) as conn:
+
+                # Open a cursor to make some operations
+                with conn.cursor() as cur:
+                    # Create tables and insert data
+                    nutrient(cur, pd_data)
+                    grp(cur, pd_data)
+                    food(cur, pd_data)
+                    nutdata(cur, pd_data)
+                    
+                    # Commit the changes to the database
+                    conn.commit()
+
+        find = True
+        if find:
         # Connect to the database
-        with psycopg.connect(dbname=db_name, user=db_user) as conn:
+            with psycopg.connect(dbname=db_name, user=db_user) as conn:
 
-            # Open a cursor to make some operations
-            with conn.cursor() as cur:
-                nutrient(cur, pd_data)
-                grp(cur, pd_data)
-                food(cur, pd_data)
-                nutdata(cur, pd_data)
+                # Open a cursor to make some operations
+                with conn.cursor() as cur:
+                    # Select data
+                    query = """SELECT food.name, 
+                            CASE 
+                                WHEN value ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(value AS NUMERIC)
+                                ELSE 0
+                            END as calcium 
+                            FROM food, nutdata, nutrient 
+                            WHERE nutrient.name = 'Calcium (mg/100 g)' and nutrient.id = nutdata.nutrient_id and food.id = nutdata.food_id 
+                            order by calcium DESC LIMIT 10;"""
 
-                # Commit the changes to the database
-                conn.commit()
+                    df = pd.read_sql_query(query, conn)
+                    print(df)
+
+                    
     except pd.errors.EmptyDataError as e:
         print(e)
     except Exception as e:
@@ -148,7 +180,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-# SELECT food.name, CASE WHEN nutdata.value ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(value AS NUMERIC) ELSE 0 END as value FROM food, nutdata WHERE nutrient_id = 10 order by value desc;
