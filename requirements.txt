@@ -2,3 +2,5 @@ argparse
 requests
 beautifulsoup4
 psycopg
+pandas
+xlrd
