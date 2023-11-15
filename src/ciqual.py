@@ -104,9 +104,14 @@ def nutdata(cur: psycopg, pd_data: pd) -> None:
                     value text )""")
     print(f"{table} table ---------> created")
     
+    # Get nutrien_id
+    query = f"SELECT id FROM nutrient;"
+    cur.execute(query)
+    nutrient_ids = [id[0] for id in cur.fetchall()]
+
     # Insert data
     query = f"INSERT INTO {table} (food_id, nutrient_id, value) VALUES (%s, %s, %s)"
-    for nutrient_id, nut_name in enumerate(nut_names, 1):
+    for nutrient_id, nut_name in zip(nutrient_ids, nut_names):
         for food_id, nut_data in zip(pd_data["alim_code"], pd_data[nut_name]):
             cur.execute(query, (food_id, nutrient_id, nut_data))        
     print(f"{table} ------------------------> data inserted")
@@ -117,7 +122,7 @@ def main():
         # convert("./src/ciqual_data/in.xls", "./src/ciqual_data/out.csv")
 
         # Retrieve data anoter possibilty --> pd_data = get_data("./src/ciqual_data/sample.csv")
-        pd_data = get_data("./src/ciqual_data/sample.csv")
+        pd_data = get_data("./src/ciqual_data/out.csv")
         
         # Database info connection
         db_name = 'ciqual'
@@ -135,8 +140,15 @@ def main():
 
                 # Commit the changes to the database
                 conn.commit()
-    except ValueError:
-        print("Something went wrong, tell the student, he'll try his best to resolve the issue")
+    except pd.errors.EmptyDataError as e:
+        print(e)
+    except Exception as e:
+        print(e)
+    
 
 if __name__ == "__main__":
     main()
+
+
+
+# SELECT food.name, CASE WHEN nutdata.value ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(value AS NUMERIC) ELSE 0 END as value FROM food, nutdata WHERE nutrient_id = 10 order by value desc;
