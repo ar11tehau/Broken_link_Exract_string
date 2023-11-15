@@ -4,24 +4,21 @@ from bs4 import BeautifulSoup
 import requests, argparse, re
 from urllib.parse import urljoin
 
-def brklnk(url:str, depth:int, visited:set = set()) -> int:
+def brklnk(url:str, depth:int, visited_urls:set = set()) -> int:
     try:
-        if depth >= 0:
+        if depth >= 0 and not url in visited_urls:
             #Check the website status
+            visited_urls.add(url)
             response = requests.get(url)
-            if 200 <= response.status_code < 400 and depth > 0 :
+            if 200 <= response.status_code < 400:
                 content = BeautifulSoup(response.content, 'html.parser')
                 for a in content.find_all('a'):
                     link = a.get("href")
-                    # Check http or https
-                    if re.match("http", link) == None:
-                        link = urljoin(url, link)
-                    if link not in visited:
-                        visited.add(link)
-                        brklnk(link, depth - 1, visited)   
+                    link_url = urljoin(url, link)
+                    brklnk(link_url, depth - 1, visited_urls)   
             elif 400 <= response.status_code < 600:
                 print("-------BROKEN LINK ------->", url)
-            return len(visited)
+            return len(visited_urls)
     except Exception as error:
         print(error)
 
